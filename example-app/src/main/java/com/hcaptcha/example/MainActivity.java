@@ -13,9 +13,6 @@ import android.widget.Toast;
 import androidx.annotation.RequiresApi;
 import androidx.appcompat.app.AppCompatActivity;
 import com.hcaptcha.sdk.*;
-import com.hcaptcha.sdk.tasks.OnFailureListener;
-import com.hcaptcha.sdk.tasks.OnOpenListener;
-import com.hcaptcha.sdk.tasks.OnSuccessListener;
 
 import java.util.Arrays;
 
@@ -27,6 +24,7 @@ public class MainActivity extends AppCompatActivity {
     private Spinner sizeSpinner;
     private CheckBox hideDialog;
     private CheckBox loading;
+    private CheckBox disableHardwareAccel;
     private TextView tokenTextView;
     private TextView errorTextView;
     private HCaptcha hCaptcha;
@@ -42,6 +40,7 @@ public class MainActivity extends AppCompatActivity {
         errorTextView = findViewById(R.id.errorTextView);
         hideDialog = findViewById(R.id.hide_dialog);
         loading = findViewById(R.id.loading);
+        disableHardwareAccel = findViewById(R.id.hwAccel);
         final ArrayAdapter<HCaptchaSize> adapter = new ArrayAdapter<>(this,
                 android.R.layout.simple_spinner_dropdown_item,
                 Arrays.asList(HCaptchaSize.NORMAL, HCaptchaSize.INVISIBLE, HCaptchaSize.COMPACT));
@@ -66,8 +65,10 @@ public class MainActivity extends AppCompatActivity {
                 .size(size)
                 .loading(loading.isChecked())
                 .hideDialog(hideDialog.isChecked())
+                .disableHardwareAcceleration(disableHardwareAccel.isChecked())
                 .tokenExpiration(10)
                 .diagnosticLog(true)
+                .retryPredicate((config, exception) -> exception.getHCaptchaError() == HCaptchaError.SESSION_TIMEOUT)
                 .build();
     }
 
@@ -81,7 +82,10 @@ public class MainActivity extends AppCompatActivity {
         errorTextView.setText(error);
     }
 
-    public void onClickClear(final View v) {
+    public void onClickReset(final View view) {
+        if (hCaptcha != null) {
+            hCaptcha.reset();
+        }
         setTokenTextView("-");
         hCaptcha = null;
     }
@@ -107,29 +111,23 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    public void onHitTest(final View v) {
+        Toast.makeText(this, "Hit Test!", Toast.LENGTH_SHORT).show();
+        Log.d(TAG, "onHitTest");
+    }
+
     private void setupClient(final HCaptcha hCaptcha) {
         hCaptcha
-            .addOnSuccessListener(new OnSuccessListener<HCaptchaTokenResponse>() {
-                @Override
-                public void onSuccess(HCaptchaTokenResponse response) {
-                    tokenResponse = response;
-                    String userResponseToken = response.getTokenResult();
-                    setTokenTextView(userResponseToken);
-                }
+            .addOnSuccessListener(response -> {
+                tokenResponse = response;
+                String userResponseToken = response.getTokenResult();
+                setTokenTextView(userResponseToken);
             })
-            .addOnFailureListener(new OnFailureListener() {
-                @Override
-                public void onFailure(HCaptchaException e) {
-                    Log.d(TAG, "hCaptcha failed: " + e.getMessage() + "(" + e.getStatusCode() + ")");
-                    setErrorTextView(e.getMessage());
-                    tokenResponse = null;
-                }
+            .addOnFailureListener(e -> {
+                Log.d(TAG, "hCaptcha failed: " + e.getMessage() + "(" + e.getStatusCode() + ")");
+                setErrorTextView(e.getMessage());
+                tokenResponse = null;
             })
-            .addOnOpenListener(new OnOpenListener() {
-                @Override
-                public void onOpen() {
-                    Toast.makeText(MainActivity.this, "hCaptcha shown", Toast.LENGTH_SHORT).show();
-                }
-            });
+            .addOnOpenListener(() -> Toast.makeText(MainActivity.this, "hCaptcha shown", Toast.LENGTH_SHORT).show());
     }
 }

@@ -1,12 +1,12 @@
 # Android SDK for hCaptcha
 
-![CI](https://github.com/hCaptcha/hcaptcha-android-sdk/workflows/Android%20SDK%20CI/badge.svg)
-[![Release](https://jitpack.io/v/hCaptcha/hcaptcha-android-sdk.svg)](https://jitpack.io/#hCaptcha/hcaptcha-android-sdk)
+![CI](https://github.com/hCaptcha/hcaptcha-android-sdk/workflows/ci/badge.svg)
+[![Release](https://jitpack.io/v/hcaptcha/hcaptcha-android-sdk.svg)](https://jitpack.io/#hcaptcha/hcaptcha-android-sdk)
 [![Minimal Android OS](https://img.shields.io/badge/Android%20OS%20-%3E=4.1-blue.svg)](https://developer.android.com/about/dashboards)
 
-###### [Installation](#installation) | [Requirements](#requirements) | [Example App](#example-app) | [Usage](#usage) | [Customization](#config-params) | [Error Handling](#error-handling) | [Debugging](#debugging-tips) | [Testing](#testing) | [Publishing](#publishing)
+###### [Installation](#installation) | [Requirements](#requirements) | [Example App](#example-app) | [Usage](#usage) | [Customization](#config-params) | [Error Handling](#error-handling) | [Debugging](#debugging-tips) | [FAQ](#faq)
 
-This SDK provides a wrapper for [hCaptcha](https://www.hcaptcha.com), and is a drop-in replacement for the SafetyNet reCAPTCHA API. You will need to configure a `site key` and a `secret key` from your hCaptcha account in order to use it.
+This SDK provides a wrapper for [hCaptcha](https://www.hcaptcha.com). It is a drop-in replacement for the SafetyNet reCAPTCHA API. You will need to configure a `site key` and a `secret key` from your hCaptcha account in order to use it.
 
 
 ## Installation
@@ -18,11 +18,27 @@ repositories {
 }
 // Add hCaptcha sdk dependency inside the app's build.gradle file
 dependencies {
-    <b>implementation 'com.github.hcaptcha:hcaptcha-android-sdk:x.y.z'</b>
+    // For Android View
+    <b>implementation 'com.github.hCaptcha.hcaptcha-android-sdk:sdk:x.y.z'</b>
+    // For Jetpack Compose
+    <b>implementation 'com.github.hCaptcha.hcaptcha-android-sdk:compose-sdk:x.y.z'</b>
 }
 </pre>
 
 *Note: replace `x.y.z` with one from [Release](https://github.com/hCaptcha/hcaptcha-android-sdk/releases) (e.g. `1.0.0`).*
+
+### Legacy (versions < 5.0)
+
+<pre>
+// Register JitPack Repository inside the root build.gradle file
+repositories {
+    <b>maven { url 'https://jitpack.io' }</b> 
+}
+// Add hCaptcha sdk dependency inside the app's build.gradle file
+dependencies {
+    <b>implementation 'com.github.hcaptcha:hcaptcha-android-sdk:x.y.z'</b>
+}
+</pre>
 
 ## Requirements
 
@@ -38,7 +54,6 @@ The current repository comes with an example Android application demonstrating 3
 See the code example below along with the possible customization to enable human verification in your Android application.
 
 <img src="/assets/hcaptcha-invisible-example.gif" alt="invisible hcaptcha example" width="300px"/>
-
 
 ## Usage
 
@@ -112,36 +127,135 @@ hCaptcha.setup().verifyWithHCaptcha()
 </manifest>
 ```
 
+To remove a specific listener you may use `HCaptcha.removeOn[Success|Failure|Open]Listener(listener)`.
+
+To remove all listeners you may use `HCaptcha.removeAllListener()`.
+
+Note ⚠️: For any sitekey that can show visual challenges, `HCaptcha.getClient(Activity)` must be called with `FragmentActivity` instance.
+
+`Activity` is allowed only when `hideDialog=true` and sitekey setting is Passive (Enterprise feature).
+
+
+```java
+...
+OnSuccessListener<HCaptchaTokenResponse> firstListener = new OnSuccessListener<HCaptchaTokenResponse>() {
+    @Override
+    public void onSuccess(HCaptchaTokenResponse response) {
+        ...
+    }
+};
+hCaptcha.addOnSuccessListener(firstListener).verifyWithHCaptcha();
+...
+OnSuccessListener<HCaptchaTokenResponse> secondListener = new OnSuccessListener<HCaptchaTokenResponse>() {
+    @Override
+    public void onSuccess(HCaptchaTokenResponse response) {
+        ...
+    }
+};
+hCaptcha.removeOnSuccessListener(firstListener)
+    .addOnSuccessListener(secondListener)
+    .verifyWithHCaptcha();
+```
+
+### For Jetpack Compose
+
+```kotlin
+import com.hcaptcha.sdk.HCaptcha
+import com.hcaptcha.sdk.HCaptchaException
+import com.hcaptcha.sdk.HCaptchaTokenResponse
+
+class HCaptchaActivity : AppCompatActivity() {
+
+    private val hCaptcha = HCaptcha.getClient(this)
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        hCaptcha.setup(BuildConfig.SITE_KEY).verifyWithHCaptcha()
+        hCaptcha.addOnSuccessListener { response: HCaptchaTokenResponse ->
+            val userResponseToken = response.tokenResult
+            val intent = Intent()
+            intent.putExtra("captcha", userResponseToken)
+            setResult(RESULT_OK, intent)
+            finish()
+        }.addOnFailureListener { e: HCaptchaException ->
+            // Error handling here: trigger another verification, display a toast, etc.
+            Log.d("hCaptcha", "hCaptcha failed: " + e.getMessage() + "(" + e.getStatusCode() + ")")
+            setResult(RESULT_CANCELED)
+            finish()
+        }.addOnOpenListener { 
+            // Usefull for analytics purposes
+            Log.d("hCaptcha", "hCaptcha is now visible.")
+        }
+    }
+}
+```
+To fetch token data from activity in @Composable Class: 
+
+```kotlin
+val intent = Intent(context, HCaptchaActivity::class.java)
+                val launcher =
+                    rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+                        val data: Intent? = result.data
+                        when (result.resultCode) {
+                            Activity.RESULT_OK -> {
+                                data?.let {
+                                    captcha.value = data.extras?.getString("captcha")?: ""
+                                }                        
+                            }
+                            Activity.RESULT_CANCELED -> {
+                                Log.d("hCaptcha", "hCaptcha failed")
+                            }
+                        }
+                    }
+                SideEffect {
+                    launcher.launch(intent)
+                }
+```
+
+### Memory usage (fragment lifecycle)
+
+We cache the fragment instance inside the SDK to speed up the next HCaptcha.verifyWithHCaptcha calls.
+
+Once you are done with verification, you can call `HCaptcha.reset()` to release all allocated resources including the strong reference to `com.hcaptcha.sdk.HCaptchaDialogFragment`.
+
+Note: If you do not call `.reset()` you will likely see a warning from tools like LeakCanary.
+
 ### Good to know
 1. The listeners (`onSuccess`, `onFailure`, `onOpen`) can be called multiple times in the following cases:
    1. the same client is used to invoke multiple verifications
    2. the config option `resetOnTimeout(true)` is used which will automatically trigger a new verification when the current token expired. This will result in a new success or error callback.
+      * deprecated, please use [`HCaptchaConfig.retryPredicate`](#retry-failed-verification)
+   2. the config option [`HCaptchaConfig.retryPredicate`](#retry-failed-verification) is used to automatically trigger a new verification when some error occurs. If `HCaptchaConfig.retryPredicate` returns `true`, this will result in a new success or error callback.
    3. `onFailure` with `TOKEN_TIMEOUT` will be called once the token is expired. To prevent this you can call `HCaptchaTokenResponse.markUsed` once the token is utilized. Also, you can change expiration timeout with `HCaptchaConfigBuilder.tokenExpiration(timeout)` (default 2 min.)
 
 ## Config Params
 
 The following list contains configuration properties to allows customization of the hCaptcha verification flow.
 
-| Name              | Values/Type             | Required | Default   | Description                                                                                                                                                          |
-|-------------------|-------------------------|----------|-----------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `siteKey`         | String                  | **Yes**  | -         | This is your sitekey, this allows you to load challenges. If you need a sitekey, please visit [hCaptcha](https://www.hcaptcha.com), and sign up to get your sitekey. |
-| `size`            | Enum                    | No       | INVISIBLE | This specifies the "size" of the checkbox component. By default, the checkbox is invisible and the challenge is shown automatically.                                 |
-| `theme`           | Enum                    | No       | LIGHT     | hCaptcha supports light, dark, and contrast themes.                                                                                                                  |
-| `locale`          | String (ISO 639-2 code) | No       | AUTO      | You can enforce a specific language or let hCaptcha auto-detect the local language based on user's device.                                                           |
-| `resetOnTimeout`  | Boolean                 | No       | False     | Automatically reload to fetch new challenge if user does not submit challenge. (Matches iOS SDK behavior.)                                                           |
-| `sentry`          | Boolean                 | No       | True      | See Enterprise docs.                                                                                                                                                 |
-| `rqdata`          | String                  | No       | -         | See Enterprise docs.                                                                                                                                                 |
-| `apiEndpoint`     | String                  | No       | -         | See Enterprise docs.                                                                                                                                                 |
-| `endpoint`        | String                  | No       | -         | See Enterprise docs.                                                                                                                                                 |
-| `reportapi`       | String                  | No       | -         | See Enterprise docs.                                                                                                                                                 |
-| `assethost`       | String                  | No       | -         | See Enterprise docs.                                                                                                                                                 |
-| `imghost`         | String                  | No       | -         | See Enterprise docs.                                                                                                                                                 |
-| `customTheme`     | Stringified JSON        | No       | -         | See Enterprise docs.                                                                                                                                                 |
-| `host`            | String                  | No       | -         | See Enterprise docs.                                                                                                                                                 |
-| `loading`         | Boolean                 | No       | True      | Show or hide the loading dialog.                                                                                                                                     |
-| `hideDialog`      | Boolean                 | No       | False     | To be used in combination with a passive sitekey when no user interaction is required. See Enterprise docs.                                                          |
-| `tokenExpiration` | long                    | No       | 120       | hCaptcha token expiration timeout (seconds).                                                                                                                         |
-| `diagnosticLog`   | Boolean                 | No       | False     | Emit detailed console logs for debugging                                                                                                          |
+| Name                          | Values/Type                                          | Required | Default                          | Description                                                                                                                                                          |
+|-------------------------------|------------------------------------------------------|----------|----------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `siteKey`                     | String                                               | **Yes**  | -                                | This is your sitekey, this allows you to load challenges. If you need a sitekey, please visit [hCaptcha](https://www.hcaptcha.com), and sign up to get your sitekey. |
+| `size`                        | Enum                                                 | No       | INVISIBLE                        | This specifies the "size" of the checkbox component. By default, the checkbox is invisible and the challenge is shown automatically.                                 |
+| `orientation`                 | Enum                                                 | No       | PORTRAIT                         | This specifies the "orientation" of the challenge.                                                                                                                   |
+| `theme`                       | Enum                                                 | No       | LIGHT                            | hCaptcha supports light, dark, and contrast themes.                                                                                                                  |
+| `locale`                      | String (ISO 639-1 code)                              | No       | AUTO                             | You can enforce a specific language or let hCaptcha auto-detect the local language based on user's device.                                                           |
+| `resetOnTimeout`              | Boolean                                              | No       | False                            | (DEPRECATED, use `retryPredicate`) Automatically reload to fetch new challenge if user does not submit challenge. (Matches iOS SDK behavior.)                        |
+| `retryPredicate`              | Lambda<sup>[*](#retry-predicate-serialization)</sup> | No       | -                                | Automatically trigger a new verification when some error occurs.                                                                                                     |
+| `jsSrc`                       | String (URL)                                         | No       | https://js.hcaptcha.com/1/api.js | See Enterprise docs.                                                                                                                                                 |
+| `sentry`                      | Boolean                                              | No       | True                             | See Enterprise docs.                                                                                                                                                 |
+| `rqdata`                      | String                                               | No       | -                                | See Enterprise docs.                                                                                                                                                 |
+| `apiEndpoint`                 | String (URL)                                         | No       | -                                | (DEPRECATED, use `jsSrc`) See Enterprise docs.                                                                                                                       |
+| `endpoint`                    | String (URL)                                         | No       | -                                | See Enterprise docs.                                                                                                                                                 |
+| `reportapi`                   | String (URL)                                         | No       | -                                | See Enterprise docs.                                                                                                                                                 |
+| `assethost`                   | String (URL)                                         | No       | -                                | See Enterprise docs.                                                                                                                                                 |
+| `imghost`                     | String (URL)                                         | No       | -                                | See Enterprise docs.                                                                                                                                                 |
+| `customTheme`                 | Stringified JSON                                     | No       | -                                | See Enterprise docs.                                                                                                                                                 |
+| `host`                        | String (URL)                                         | No       | -                                | See Enterprise docs.                                                                                                                                                 |
+| `loading`                     | Boolean                                              | No       | True                             | Show or hide the loading dialog.                                                                                                                                     |
+| `hideDialog`                  | Boolean                                              | No       | False                            | To be used in combination with a passive sitekey when no user interaction is required. See Enterprise docs.                                                          |
+| `tokenExpiration`             | long                                                 | No       | 120                              | hCaptcha token expiration timeout (seconds).                                                                                                                         |
+| `diagnosticLog`               | Boolean                                              | No       | False                            | Emit detailed console logs for debugging                                                                                                                             |
+| `disableHardwareAcceleration` | Boolean                                              | No       | True                             | Disable WebView hardware acceleration                                                                                                                                |
 
 ### Config Examples
 
@@ -157,7 +271,7 @@ final HCaptchaConfig config = HCaptchaConfig.builder()
 2. Set a specific language, use a dark theme and a compact checkbox.
 ```java
 final HCaptchaConfig config = HCaptchaConfig.builder()
-                .siteKey(YOUR_API_SITE_KEY)
+                .siteKey("YOUR_API_SITE_KEY")
                 .locale("ro")
                 .size(HCaptchaSize.COMPACT)
                 .theme(HCaptchaTheme.DARK)
@@ -171,19 +285,46 @@ You can add logic to gracefully handle the errors.
 
 The following is a list of possible error codes:
 
-| Name                   | Code  | Description                                        |
-|------------------------|-------|----------------------------------------------------|
-| `NETWORK_ERROR`        | 7     | There is no internet connection.                   |
-| `INVALID_DATA`         | 8     | Invalid data is not accepted by endpoints.         |
-| `CHALLENGE_ERROR`      | 9     | JS client encountered an error on challenge setup. |
-| `INTERNAL_ERROR`       | 10    | JS client encountered an internal error.           |
-| `SESSION_TIMEOUT`      | 15    | The challenge expired.                             |
-| `TOKEN_TIMEOUT`        | 16    | The token expired.                                 |
-| `CHALLENGE_CLOSED`     | 30    | The challenge was closed by the user.              |
-| `RATE_LIMITED`         | 31    | Spam detected.                                     |
-| `INVALID_CUSTOM_THEME` | 32    | Invalid custom theme.                              |
-| `ERROR`                | 29    | General failure.                                   |
+| Name                           | Code | Description                                        |
+|--------------------------------|------|----------------------------------------------------|
+| `NETWORK_ERROR`                | 7    | There is no internet connection.                   |
+| `INVALID_DATA`                 | 8    | Invalid data is not accepted by endpoints.         |
+| `CHALLENGE_ERROR`              | 9    | JS client encountered an error on challenge setup. |
+| `INTERNAL_ERROR`               | 10   | JS client encountered an internal error.           |
+| `SESSION_TIMEOUT`              | 15   | The challenge expired.                             |
+| `TOKEN_TIMEOUT`                | 16   | The token expired.                                 |
+| `CHALLENGE_CLOSED`             | 30   | The challenge was closed by the user.              |
+| `RATE_LIMITED`                 | 31   | Spam detected.                                     |
+| `INVALID_CUSTOM_THEME`         | 32   | Invalid custom theme.                              |
+| `INSECURE_HTTP_REQUEST_ERROR`  | 33   | Insecure resource requested.                       |
+| `ERROR`                        | 29   | General failure.                                   |
 
+### Retry Failed Verification
+
+You can indicate an automatic verification retry by setting the lambda config `HCaptchaConfig.retryPredicate`.
+
+One must be careful to not introduce infinite retries and thus blocking the user from error recovering.
+
+Example below will automatically retry in case of `CHALLENGE_CLOSED` error:
+```java
+final HCaptchaConfig config = HCaptchaConfig.builder()
+        .siteKey("YOUR_API_SITE_KEY")
+        .retryPredicate((config, hCaptchaException) -> {
+            return hCaptchaException.getHCaptchaError() == HCaptchaError.CHALLENGE_CLOSED;
+        })
+        .build();
+...
+```
+
+### Retry predicate serialization
+
+Lambda may implicitly capture variables from its surrounding context.
+For a lambda to be serializable, all the captured variables must be serializable as well.
+Failing to meet this requirement can result in runtime errors when attempting to deserialize the lambda.
+
+The `retryPredicate` is part of `HCaptchaConfig` that may get persist during application lifecycle.
+So pay attention to this aspect and make sure that `retryPredicate` is serializable to avoid
+`android.os.BadParcelableException` in run-time.
 
 ## Debugging Tips
 
@@ -196,6 +337,33 @@ Useful error messages are often rendered on the hCaptcha checkbox. For example, 
 After retrieving a `token`, you should pass it to your backend in order to verify the validity of the token by doing a [server side check](https://docs.hcaptcha.com/#server) using the hCaptcha secret linked to your sitekey.
 
 ---
+
+## FAQ
+
+> Can I get a token in a non-UI thread?
+
+No: the SDK depends on WebView, which is a UI component and cannot be instantiated in a non-UI thread.
+
+However, the SDK provides a completely silent (invisible to the end-user) mechanism with `hideDialog=true` config + "passive" site key (this is an Enterprise feature). But note that the token request still has to be called from the UI thread.
+
+> How can I prevent the hCaptcha verification from being canceled when the back button is pressed?
+
+It is possible by specifying `HCaptchaConfig.retryPredicate` as shown in the following code snippet:
+
+```java
+final HCaptchaConfig config = HCaptchaConfig.builder()
+        .siteKey("YOUR_API_SITE_KEY")
+        .retryPredicate((config, hCaptchaException) -> {
+            return hCaptchaException.getHCaptchaError() == HCaptchaError.CHALLENGE_CLOSED;
+        })
+        .build();
+```
+
+> HCaptcha constantly failing with IllegalStateException "Visual Challenge verification require FragmentActivity", how to fix it?
+
+SDK expect to be initialized with `FragmentActivity` instance in regular scenario.
+
+In case if you use passive `siteKey` make sure that you called `hideDialog(true)` on `HCaptchaCconfig.builder()`
 
 ## For maintainers
 

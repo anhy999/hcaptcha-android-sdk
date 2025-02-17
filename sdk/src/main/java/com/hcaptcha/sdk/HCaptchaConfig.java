@@ -1,5 +1,6 @@
 package com.hcaptcha.sdk;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NonNull;
@@ -49,9 +50,19 @@ public class HCaptchaConfig implements Serializable {
     /**
      * The url of api.js
      * Default: https://js.hcaptcha.com/1/api.js (Override only if using first-party hosting feature.)
+     * @deprecated use {@link #jsSrc} property instead
      */
     @Builder.Default
-    private String apiEndpoint = "https://js.hcaptcha.com/1/api.js";
+    @JsonIgnore
+    @Deprecated
+    private String apiEndpoint = "https://js.hcaptcha.com/1/api.js"; //NOSONAR
+
+    /**
+     * The url of api.js
+     * Default: https://js.hcaptcha.com/1/api.js (Override only if using first-party hosting feature.)
+     */
+    @Builder.Default
+    private String jsSrc = "https://js.hcaptcha.com/1/api.js";
 
     /**
      * Point hCaptcha JS Ajax Requests to alternative API Endpoint.
@@ -91,6 +102,12 @@ public class HCaptchaConfig implements Serializable {
     private HCaptchaSize size = HCaptchaSize.INVISIBLE;
 
     /**
+     * The orientation of the challenge. Default is {@link HCaptchaOrientation#PORTRAIT}.
+     */
+    @Builder.Default
+    private HCaptchaOrientation orientation = HCaptchaOrientation.PORTRAIT;
+
+    /**
      * The theme. Default is {@link HCaptchaTheme#LIGHT}.
      */
     @Builder.Default
@@ -110,9 +127,23 @@ public class HCaptchaConfig implements Serializable {
 
     /**
      * Reset hCaptcha on timeout
+     * @deprecated use {@link #retryPredicate} to implement desired retry logic
      */
     @Builder.Default
+    @Deprecated
     private Boolean resetOnTimeout = false;
+
+    /**
+     * The lambda will decide should we retry or not
+     */
+    @Builder.Default
+    @JsonIgnore
+    private IHCaptchaRetryPredicate retryPredicate = (config, exception) -> {
+        if (Boolean.TRUE.equals(config.resetOnTimeout)) {
+            return exception.getHCaptchaError() == HCaptchaError.SESSION_TIMEOUT;
+        }
+        return false;
+    };
 
     /**
      * hCaptcha token expiration timeout (seconds)
@@ -125,4 +156,30 @@ public class HCaptchaConfig implements Serializable {
      */
     @Builder.Default
     private Boolean diagnosticLog = false;
+
+    /**
+     * Disable hardware acceleration for WebView
+     */
+    @Builder.Default
+    @NonNull
+    private Boolean disableHardwareAcceleration = true;
+
+    /**
+     * @deprecated use {@link #getJsSrc()} getter instead
+     */
+    @Deprecated
+    public String getApiEndpoint() { //NOSONAR
+        return jsSrc;
+    }
+
+    public static class HCaptchaConfigBuilder {
+        /**
+         * @deprecated use {@link #jsSrc} setter instead
+         */
+        @Deprecated
+        public HCaptchaConfigBuilder apiEndpoint(String url) { //NOSONAR
+            this.jsSrc(url);
+            return this;
+        }
+    }
 }

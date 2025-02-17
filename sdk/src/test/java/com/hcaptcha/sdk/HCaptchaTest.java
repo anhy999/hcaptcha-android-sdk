@@ -7,17 +7,24 @@ import static org.junit.Assert.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.withSettings;
 
+import android.content.Context;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.util.AndroidRuntimeException;
 import androidx.fragment.app.FragmentActivity;
 
+import com.hcaptcha.sdk.tasks.OnFailureListener;
+import com.hcaptcha.sdk.tasks.OnOpenListener;
+import com.hcaptcha.sdk.tasks.OnSuccessListener;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -25,6 +32,7 @@ import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
+import org.mockito.MockedConstruction;
 import org.mockito.MockedStatic;
 import org.mockito.MockitoAnnotations;
 import org.mockito.junit.MockitoJUnitRunner;
@@ -45,10 +53,25 @@ public class HCaptchaTest {
     @Mock
     HCaptchaDialogFragment fragment;
 
+    @Mock
+    OnSuccessListener<HCaptchaTokenResponse> onSuccessListener;
+
+    @Mock
+    OnFailureListener onFailureListener;
+
+    @Mock
+    OnOpenListener onOpenListener;
+
     @Captor
     ArgumentCaptor<HCaptchaConfig> hCaptchaConfigCaptor;
 
     MockedStatic<HCaptchaDialogFragment> dialogFragmentMock;
+
+    final HCaptchaConfig config = HCaptchaConfig.builder()
+            .siteKey(HCaptchaConfigTest.MOCK_SITE_KEY)
+            .size(HCaptchaSize.NORMAL)
+            .loading(true)
+            .build();
 
     @Before
     public void init() {
@@ -56,9 +79,10 @@ public class HCaptchaTest {
         dialogFragmentMock = mockStatic(HCaptchaDialogFragment.class);
         dialogFragmentMock
                 .when(() -> HCaptchaDialogFragment.newInstance(
+                        any(Context.class),
                         any(HCaptchaConfig.class),
-                        any(HCaptchaStateListener.class),
-                        any(IHCaptchaHtmlProvider.class)))
+                        any(HCaptchaInternalConfig.class),
+                        any(HCaptchaStateListener.class)))
                 .thenReturn(fragment);
     }
 
@@ -77,9 +101,22 @@ public class HCaptchaTest {
         assertNotNull(HCaptcha.getClient(fragmentActivity).setup(HCaptchaConfigTest.MOCK_SITE_KEY));
 
         dialogFragmentMock.verify(() -> HCaptchaDialogFragment.newInstance(
+                any(Context.class),
                 hCaptchaConfigCaptor.capture(),
-                any(HCaptchaStateListener.class),
-                any(IHCaptchaHtmlProvider.class)));
+                any(HCaptchaInternalConfig.class),
+                any(HCaptchaStateListener.class)));
+    }
+
+    @Test(expected = IllegalStateException.class)
+    public void test_exception_on_missing_site_key() throws Exception {
+        final ApplicationInfo applicationInfo = mock(ApplicationInfo.class);
+        applicationInfo.metaData = mock(Bundle.class);
+
+        when(fragmentActivity.getPackageName()).thenReturn(TEST_PACKAGE_NAME);
+        when(fragmentActivity.getPackageManager()).thenReturn(packageManager);
+        when(packageManager.getApplicationInfo(TEST_PACKAGE_NAME, PackageManager.GET_META_DATA))
+                .thenReturn(applicationInfo);
+        HCaptcha.getClient(fragmentActivity).setup();
     }
 
     @Test
@@ -103,32 +140,34 @@ public class HCaptchaTest {
         final String siteKey = HCaptchaConfigTest.MOCK_SITE_KEY;
         final HCaptcha hCaptcha = HCaptcha.getClient(fragmentActivity);
 
-        dialogFragmentMock.verify(never(), () ->
+        dialogFragmentMock.verify(() ->
                 HCaptchaDialogFragment.newInstance(
+                        any(Context.class),
                         any(HCaptchaConfig.class),
-                        any(HCaptchaStateListener.class),
-                        any(IHCaptchaHtmlProvider.class)));
+                        any(HCaptchaInternalConfig.class),
+                        any(HCaptchaStateListener.class)), never());
 
         hCaptcha.verifyWithHCaptcha(siteKey);
 
         dialogFragmentMock.verify(() ->
                 HCaptchaDialogFragment.newInstance(
+                        any(Context.class),
                         hCaptchaConfigCaptor.capture(),
-                        any(HCaptchaStateListener.class),
-                        any(IHCaptchaHtmlProvider.class)));
+                        any(HCaptchaInternalConfig.class),
+                        any(HCaptchaStateListener.class)));
         verify(fragment).startVerification(fragmentActivity);
 
-        final HCaptchaConfig config = hCaptchaConfigCaptor.getValue();
-        assertNotNull(config);
-        assertEquals(siteKey, config.getSiteKey());
+        final HCaptchaConfig capturedConfig = hCaptchaConfigCaptor.getValue();
+        assertNotNull(capturedConfig);
+        assertEquals(siteKey, capturedConfig.getSiteKey());
 
         // Rest of params must be the defaults
         final String locale = Locale.getDefault().getLanguage();
-        assertEquals(HCaptchaSize.INVISIBLE, config.getSize());
-        assertEquals(HCaptchaTheme.LIGHT, config.getTheme());
-        assertNull(config.getRqdata());
-        assertEquals(locale, config.getLocale());
-        assertEquals("https://js.hcaptcha.com/1/api.js", config.getApiEndpoint());
+        assertEquals(HCaptchaSize.INVISIBLE, capturedConfig.getSize());
+        assertEquals(HCaptchaTheme.LIGHT, capturedConfig.getTheme());
+        assertNull(capturedConfig.getRqdata());
+        assertEquals(locale, capturedConfig.getLocale());
+        assertEquals("https://js.hcaptcha.com/1/api.js", capturedConfig.getApiEndpoint());
     }
 
     @Test
@@ -140,22 +179,17 @@ public class HCaptchaTest {
         verify(packageManager, never()).getApplicationInfo(any(String.class), anyInt());
         dialogFragmentMock.verify(() ->
                 HCaptchaDialogFragment.newInstance(
+                        any(Context.class),
                         hCaptchaConfigCaptor.capture(),
-                        any(HCaptchaStateListener.class),
-                        any(IHCaptchaHtmlProvider.class)));
+                        any(HCaptchaInternalConfig.class),
+                        any(HCaptchaStateListener.class)));
 
-        final HCaptchaConfig config = hCaptchaConfigCaptor.getValue();
-        assertEquals(HCaptchaConfigTest.MOCK_SITE_KEY, config.getSiteKey());
+        final HCaptchaConfig capturedConfig = hCaptchaConfigCaptor.getValue();
+        assertEquals(HCaptchaConfigTest.MOCK_SITE_KEY, capturedConfig.getSiteKey());
     }
 
     @Test
     public void test_setup_config() throws Exception {
-        final HCaptchaConfig config = HCaptchaConfig.builder()
-                .siteKey(HCaptchaConfigTest.MOCK_SITE_KEY)
-                .size(HCaptchaSize.NORMAL)
-                .loading(true)
-                .build();
-
         HCaptcha.getClient(fragmentActivity)
                 .setup(config)
                 .verifyWithHCaptcha();
@@ -163,60 +197,106 @@ public class HCaptchaTest {
         verify(packageManager, never()).getApplicationInfo(any(String.class), anyInt());
         dialogFragmentMock.verify(() ->
                 HCaptchaDialogFragment.newInstance(
+                        any(Context.class),
                         hCaptchaConfigCaptor.capture(),
-                        any(HCaptchaStateListener.class),
-                        any(IHCaptchaHtmlProvider.class)));
+                        any(HCaptchaInternalConfig.class),
+                        any(HCaptchaStateListener.class)));
 
         assertEquals(config, hCaptchaConfigCaptor.getValue());
     }
 
     @Test
     public void test_verify_config_has_priority_over_setup_config() throws Exception {
-        final HCaptchaConfig setupConfig = HCaptchaConfig.builder()
-                .siteKey("SETUP-SITE-KEY")
+        final HCaptchaConfig verifyConfig = HCaptchaConfig.builder()
+                .siteKey(HCaptchaConfigTest.MOCK_SITE_KEY + "-on-verify")
                 .size(HCaptchaSize.INVISIBLE)
                 .loading(false)
                 .build();
 
-        final HCaptchaConfig verifyConfig = HCaptchaConfig.builder()
-                .siteKey(HCaptchaConfigTest.MOCK_SITE_KEY)
-                .size(HCaptchaSize.NORMAL)
-                .loading(true)
-                .build();
-
         HCaptcha.getClient(fragmentActivity)
-                .setup(setupConfig)
+                .setup(config)
                 .verifyWithHCaptcha(verifyConfig);
 
         verify(packageManager, never()).getApplicationInfo(any(String.class), anyInt());
-        dialogFragmentMock.verify(times(2), () ->
+        dialogFragmentMock.verify(() ->
                 HCaptchaDialogFragment.newInstance(
+                        any(Context.class),
                         hCaptchaConfigCaptor.capture(),
-                        any(HCaptchaStateListener.class),
-                        any(IHCaptchaHtmlProvider.class)));
+                        any(HCaptchaInternalConfig.class),
+                        any(HCaptchaStateListener.class)), times(2));
 
         assertEquals(verifyConfig, hCaptchaConfigCaptor.getValue());
     }
 
     @Test
     public void test_verify_site_key_has_priority_over_setup_config() throws Exception {
-        final HCaptchaConfig setupConfig = HCaptchaConfig.builder()
-                .siteKey("SETUP-SITE-KEY")
-                .size(HCaptchaSize.INVISIBLE)
-                .loading(false)
-                .build();
-
+        final String siteKey = HCaptchaConfigTest.MOCK_SITE_KEY + "-on-verify";
         HCaptcha.getClient(fragmentActivity)
-                .setup(setupConfig)
-                .verifyWithHCaptcha(HCaptchaConfigTest.MOCK_SITE_KEY);
+                .setup(config)
+                .verifyWithHCaptcha(siteKey);
 
         verify(packageManager, never()).getApplicationInfo(any(String.class), anyInt());
-        dialogFragmentMock.verify(times(2), () ->
+        dialogFragmentMock.verify(() ->
                 HCaptchaDialogFragment.newInstance(
+                        any(Context.class),
                         hCaptchaConfigCaptor.capture(),
-                        any(HCaptchaStateListener.class),
-                        any(IHCaptchaHtmlProvider.class)));
+                        any(HCaptchaInternalConfig.class),
+                        any(HCaptchaStateListener.class)), times(2));
 
-        assertEquals(HCaptchaConfigTest.MOCK_SITE_KEY, hCaptchaConfigCaptor.getValue().getSiteKey());
+        assertEquals(siteKey, hCaptchaConfigCaptor.getValue().getSiteKey());
+    }
+
+    @Test
+    public void test_reset() {
+        HCaptcha.getClient(fragmentActivity).setup(config).reset();
+        verify(fragment).reset();
+    }
+
+    @Test
+    public void test_remove_listener() {
+        HCaptcha.getClient(fragmentActivity)
+                .addOnSuccessListener(onSuccessListener)
+                .removeOnSuccessListener(onSuccessListener);
+    }
+
+    @Test
+    public void test_remove_non_existing_listener() {
+        HCaptcha.getClient(fragmentActivity)
+                .removeOnSuccessListener(onSuccessListener);
+    }
+
+    @Test
+    public void test_clear_all_listener() {
+        HCaptcha.getClient(fragmentActivity)
+                .addOnSuccessListener(onSuccessListener)
+                .addOnFailureListener(onFailureListener)
+                .addOnOpenListener(onOpenListener)
+                .removeAllListeners();
+    }
+
+    @Test
+    public void test_webview_not_installed() throws Exception {
+        final ApplicationInfo applicationInfo = mock(ApplicationInfo.class);
+        final Bundle bundle = mock(Bundle.class);
+        when(bundle.getString(META_SITE_KEY)).thenReturn(HCaptchaConfigTest.MOCK_SITE_KEY);
+        bundle.putString(META_SITE_KEY, HCaptchaConfigTest.MOCK_SITE_KEY);
+        applicationInfo.metaData = bundle;
+
+        when(fragmentActivity.getPackageName()).thenReturn(TEST_PACKAGE_NAME);
+        when(fragmentActivity.getPackageManager()).thenReturn(packageManager);
+        when(packageManager.getApplicationInfo(TEST_PACKAGE_NAME, PackageManager.GET_META_DATA))
+                .thenReturn(applicationInfo);
+
+        try (MockedConstruction<HCaptchaWebView> mock = mockConstruction(HCaptchaWebView.class,
+                withSettings().defaultAnswer(invocation -> {
+                    throw new AndroidRuntimeException(
+                            "android.webkit.WebViewFactory$MissingWebViewPackageException");
+                })
+        )) {
+            HCaptcha.getClient(fragmentActivity)
+                    .setup(config.toBuilder().hideDialog(true).build())
+                    .verifyWithHCaptcha()
+                    .addOnFailureListener(e -> assertEquals(HCaptchaError.ERROR, e.getHCaptchaError()));
+        }
     }
 }

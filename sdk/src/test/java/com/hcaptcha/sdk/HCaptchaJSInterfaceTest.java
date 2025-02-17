@@ -9,7 +9,6 @@ import static org.mockito.Mockito.when;
 
 import android.os.Handler;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.junit.Before;
@@ -19,9 +18,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.Spy;
-import org.mockito.invocation.InvocationOnMock;
 import org.mockito.junit.MockitoJUnitRunner;
-import org.mockito.stubbing.Answer;
 import org.skyscreamer.jsonassert.JSONAssert;
 
 @RunWith(MockitoJUnitRunner.class)
@@ -43,22 +40,20 @@ public class HCaptchaJSInterfaceTest {
 
     @Before
     public void init() {
-        when(handler.post(any(Runnable.class))).thenAnswer(new Answer() {
-            @Override
-            public Object answer(InvocationOnMock invocation) throws Throwable {
-                invocation.getArgument(0, Runnable.class).run();
-                return null;
-            }
+        when(handler.post(any(Runnable.class))).thenAnswer(invocation -> {
+            invocation.getArgument(0, Runnable.class).run();
+            return null;
         });
     }
 
     @Test
-    public void full_config_serialization() throws JsonProcessingException, JSONException {
+    public void full_config_serialization() throws JSONException {
         final String siteKey = "0000-1111-2222-3333";
         final String locale = "ro";
+        final HCaptchaOrientation orientation = HCaptchaOrientation.PORTRAIT;
         final HCaptchaSize size = HCaptchaSize.NORMAL;
         final String rqdata = "custom rqdata";
-        final String apiEndpoint = "127.0.0.1/api.js";
+        final String jsSrc = "127.0.0.1/api.js";
         final String endpoint = "https://example.com/endpoint";
         final String assethost = "https://example.com/assethost";
         final String imghost = "https://example.com/imghost";
@@ -69,9 +64,10 @@ public class HCaptchaJSInterfaceTest {
                 .siteKey(siteKey)
                 .locale(locale)
                 .size(size)
+                .orientation(orientation)
                 .theme(HCaptchaTheme.DARK)
                 .rqdata(rqdata)
-                .apiEndpoint(apiEndpoint)
+                .jsSrc(jsSrc)
                 .endpoint(endpoint)
                 .assethost(assethost)
                 .imghost(imghost)
@@ -81,6 +77,7 @@ public class HCaptchaJSInterfaceTest {
                 .hideDialog(true)
                 .tokenExpiration(timeout)
                 .diagnosticLog(true)
+                .disableHardwareAcceleration(false)
                 .build();
         final HCaptchaJSInterface jsInterface = new HCaptchaJSInterface(handler, config, captchaVerifier);
 
@@ -89,13 +86,14 @@ public class HCaptchaJSInterfaceTest {
         expected.put("sentry", true);
         expected.put("loading", true);
         expected.put("rqdata", rqdata);
-        expected.put("apiEndpoint", apiEndpoint);
+        expected.put("jsSrc", jsSrc);
         expected.put("endpoint", endpoint);
         expected.put("reportapi", reportapi);
         expected.put("assethost", assethost);
         expected.put("imghost", imghost);
         expected.put("locale", locale);
         expected.put("size", size.toString());
+        expected.put("orientation", orientation.toString());
         expected.put("theme", HCaptchaTheme.DARK.toString());
         expected.put("customTheme", JSONObject.NULL);
         expected.put("host", host);
@@ -103,21 +101,24 @@ public class HCaptchaJSInterfaceTest {
         expected.put("hideDialog", true);
         expected.put("tokenExpiration", timeout);
         expected.put("diagnosticLog", true);
+        expected.put("disableHardwareAcceleration", false);
 
         JSONAssert.assertEquals(jsInterface.getConfig(), expected, false);
     }
 
     @Test
-    public void subset_config_serialization() throws JsonProcessingException, JSONException {
+    public void subset_config_serialization() throws JSONException {
         final String siteKey = "0000-1111-2222-3333";
         final String locale = "ro";
         final HCaptchaSize size = HCaptchaSize.NORMAL;
+        final HCaptchaOrientation orientation = HCaptchaOrientation.LANDSCAPE;
         final String rqdata = "custom rqdata";
         final long defaultTimeout = 120;
         final HCaptchaConfig config = HCaptchaConfig.builder()
                 .siteKey(siteKey)
                 .locale(locale)
                 .size(size)
+                .orientation(orientation)
                 .theme(HCaptchaTheme.DARK)
                 .rqdata(rqdata)
                 .build();
@@ -128,13 +129,14 @@ public class HCaptchaJSInterfaceTest {
         expected.put("sentry", true);
         expected.put("loading", true);
         expected.put("rqdata", rqdata);
-        expected.put("apiEndpoint", "https://js.hcaptcha.com/1/api.js");
+        expected.put("jsSrc", "https://js.hcaptcha.com/1/api.js");
         expected.put("endpoint", JSONObject.NULL);
         expected.put("reportapi", JSONObject.NULL);
         expected.put("assethost", JSONObject.NULL);
         expected.put("imghost", JSONObject.NULL);
         expected.put("locale", locale);
         expected.put("size", size.toString());
+        expected.put("orientation", orientation.toString());
         expected.put("theme", HCaptchaTheme.DARK.toString());
         expected.put("customTheme", JSONObject.NULL);
         expected.put("host", JSONObject.NULL);
@@ -142,6 +144,7 @@ public class HCaptchaJSInterfaceTest {
         expected.put("hideDialog", false);
         expected.put("tokenExpiration", defaultTimeout);
         expected.put("diagnosticLog", false);
+        expected.put("disableHardwareAcceleration", true);
 
         JSONAssert.assertEquals(jsInterface.getConfig(), expected, false);
     }

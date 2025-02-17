@@ -35,11 +35,7 @@ final class HCaptchaWebViewHelper {
 
     @Getter
     @NonNull
-    private final HCaptchaStateListener listener;
-
-    @Getter
-    @NonNull
-    private final WebView webView;
+    private final HCaptchaWebView webView;
 
     @NonNull
     private final IHCaptchaHtmlProvider htmlProvider;
@@ -47,16 +43,14 @@ final class HCaptchaWebViewHelper {
     HCaptchaWebViewHelper(@NonNull final Handler handler,
                           @NonNull final Context context,
                           @NonNull final HCaptchaConfig config,
+                          @NonNull final HCaptchaInternalConfig internalConfig,
                           @NonNull final IHCaptchaVerifier captchaVerifier,
-                          @NonNull final HCaptchaStateListener listener,
-                          @NonNull final WebView webView,
-                          @NonNull final IHCaptchaHtmlProvider htmlProvider) {
+                          @NonNull final HCaptchaWebView webView) {
         this.context = context;
         this.config = config;
         this.captchaVerifier = captchaVerifier;
-        this.listener = listener;
         this.webView = webView;
-        this.htmlProvider = htmlProvider;
+        this.htmlProvider = internalConfig.getHtmlProvider();
         setupWebView(handler);
     }
 
@@ -69,27 +63,31 @@ final class HCaptchaWebViewHelper {
     private void setupWebView(@NonNull final Handler handler) {
         HCaptchaLog.d("WebViewHelper.setupWebView");
 
+        webView.setId(R.id.webView);
+
         final HCaptchaJSInterface jsInterface = new HCaptchaJSInterface(handler, config, captchaVerifier);
         final HCaptchaDebugInfo debugInfo = new HCaptchaDebugInfo(context);
         final WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setLoadWithOverviewMode(true);
-        settings.setCacheMode(WebSettings.LOAD_CACHE_ELSE_NETWORK);
+        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         settings.setGeolocationEnabled(false);
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(false);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            webView.setWebViewClient(new HCaptchaWebClient());
+            webView.setWebViewClient(new HCaptchaWebClient(handler));
         }
         if (HCaptchaLog.sDiagnosticsLogEnabled) {
             webView.setWebChromeClient(new HCaptchaWebChromeClient());
         }
         webView.setBackgroundColor(Color.TRANSPARENT);
-        webView.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+        if (config.getDisableHardwareAcceleration()) {
+            webView.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+        }
         webView.addJavascriptInterface(jsInterface, HCaptchaJSInterface.JS_INTERFACE_TAG);
         webView.addJavascriptInterface(debugInfo, HCaptchaDebugInfo.JS_INTERFACE_TAG);
         webView.loadDataWithBaseURL(config.getHost(), htmlProvider.getHtml(), "text/html", "UTF-8", null);
-        HCaptchaLog.d("WebViewHelper.loadData");
+        HCaptchaLog.d("WebViewHelper.loadData. Hardware acceleration enabled: %b", webView.isHardwareAccelerated());
     }
 
     public void destroy() {
@@ -106,8 +104,31 @@ final class HCaptchaWebViewHelper {
         webView.destroy();
     }
 
+    void resetAndExecute() {
+        webView.loadUrl("javascript:resetAndExecute();");
+    }
+
+    void reset() {
+        if (webView.isDestroyed()) {
+            HCaptchaLog.w("WebView is destroyed already");
+        } else {
+            webView.loadUrl("javascript:reset();");
+        }
+    }
+
+    public boolean shouldRetry(HCaptchaException exception) {
+        return config.getRetryPredicate().shouldRetry(config, exception);
+    }
+
     @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
     private class HCaptchaWebClient extends WebViewClient {
+
+        @NonNull
+        private final Handler handler;
+
+        HCaptchaWebClient(@NonNull Handler handler) {
+            this.handler = handler;
+        }
 
         private String stripUrl(String url) {
             return url.split("[?#]")[0] + "...";
@@ -116,9 +137,13 @@ final class HCaptchaWebViewHelper {
         @Override
         public WebResourceResponse shouldInterceptRequest (final WebView view, final WebResourceRequest request) {
             final Uri requestUri = request.getUrl();
-            if (requestUri != null && requestUri.getScheme().equals("http")) {
-                webView.removeJavascriptInterface(HCaptchaJSInterface.JS_INTERFACE_TAG);
-                webView.removeJavascriptInterface(HCaptchaDebugInfo.JS_INTERFACE_TAG);
+            if (requestUri != null && requestUri.getScheme() != null && requestUri.getScheme().equals("http")) {
+                handler.post(() -> {
+                    webView.removeJavascriptInterface(HCaptchaJSInterface.JS_INTERFACE_TAG);
+                    webView.removeJavascriptInterface(HCaptchaDebugInfo.JS_INTERFACE_TAG);
+                    captchaVerifier.onFailure(new HCaptchaException(HCaptchaError.INSECURE_HTTP_REQUEST_ERROR,
+                            "Insecure resource " + requestUri + " requested"));
+                });
             }
             return super.shouldInterceptRequest(view, request);
         }

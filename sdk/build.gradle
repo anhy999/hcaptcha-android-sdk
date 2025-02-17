@@ -1,33 +1,41 @@
 plugins {
+    id "com.android.library"
+    id "maven-publish"
     id "pmd"
+    id "jacoco"
     id "checkstyle"
-    id "com.github.spotbugs" version "4.8.0"
+    id "com.github.spotbugs" version "5.2.3"
     id "org.owasp.dependencycheck" version "7.1.1"
+    id "org.sonarqube" version "3.4.0.2513"
 }
 
-apply plugin: 'com.android.library'
-apply plugin: 'maven-publish'
+ext {
+    maxAarSizeKb = 200
+}
 
 android {
-    compileSdkVersion 32
-    buildToolsVersion "30.0.3"
+    compileSdk 35
+    namespace 'com.hcaptcha.sdk'
+
+    buildFeatures {
+        buildConfig true
+    }
 
     defaultConfig {
         minSdkVersion 16
-        targetSdkVersion 32
+        targetSdkVersion 35
 
         // See https://developer.android.com/studio/publish/versioning
         // versionCode must be integer and be incremented by one for every new update
         // android system uses this to prevent downgrades
-        versionCode 23
+        versionCode 45
 
         // version number visible to the user
         // should follow semantic versioning (See https://semver.org)
-        versionName "3.3.5"
+        versionName "4.1.0"
 
         buildConfigField 'String', 'VERSION_NAME', "\"${defaultConfig.versionName}_${defaultConfig.versionCode}\""
 
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles "consumer-rules.pro"
         proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
     }
@@ -45,48 +53,33 @@ android {
     }
 
     testOptions {
-        unitTests.returnDefaultValues = true
+        unitTests {
+            returnDefaultValues = true
+            includeAndroidResources = true
+        }
+    }
+
+    publishing {
+        singleVariant('release') {
+            withSourcesJar()
+            withJavadocJar()
+        }
     }
 }
 
 dependencies {
-    implementation fileTree(dir: "libs", include: ["*.jar"])
     //noinspection GradleDependency
     implementation 'androidx.appcompat:appcompat:1.3.1'
-    implementation 'com.fasterxml.jackson.core:jackson-databind:2.12.1'
-    compileOnly 'org.projectlombok:lombok:1.18.16'
-    annotationProcessor 'org.projectlombok:lombok:1.18.16'
+    //noinspection GradleDependency
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.13.5' // max version https://github.com/FasterXML/jackson-databind/issues/3657
+    compileOnly 'org.projectlombok:lombok:1.18.32'
+    annotationProcessor 'org.projectlombok:lombok:1.18.32'
 
     testImplementation 'junit:junit:4.13.2'
-    testImplementation 'org.mockito:mockito-inline:3.6.28'
-    testImplementation 'org.skyscreamer:jsonassert:1.5.0'
-
-    androidTestImplementation 'androidx.test:core:1.4.0'
-    androidTestImplementation 'androidx.test:runner:1.4.0'
-    androidTestImplementation 'androidx.test:rules:1.4.0'
-    androidTestImplementation 'androidx.test.ext:junit:1.1.3'
-    androidTestImplementation 'androidx.test.espresso:espresso-core:3.4.0'
-    androidTestImplementation 'androidx.test.espresso:espresso-web:3.4.0'
-    androidTestImplementation 'org.hamcrest:hamcrest-library:1.3'
-
-    //noinspection FragmentGradleConfiguration
-    androidTestImplementation 'androidx.fragment:fragment-testing:1.4.1'
+    testImplementation 'org.mockito:mockito-inline:4.8.1'
+    testImplementation 'org.skyscreamer:jsonassert:1.5.1'
 
     compileOnly 'com.google.code.findbugs:annotations:3.0.1'
-}
-
-task androidJavadocs(type: Javadoc) {
-    source = android.sourceSets.main.java.srcDirs
-    classpath += project.files(android.getBootClasspath().join(File.pathSeparator))
-    android.libraryVariants.all { variant ->
-        owner.classpath += variant.javaCompileProvider.get().classpath
-    }
-    exclude '**/R.html', '**/R.*.html', '**/index.html'
-}
-
-task androidJavadocsJar(type: Jar, dependsOn: androidJavadocs) {
-    archiveClassifier.set('javadoc')
-    from androidJavadocs.destinationDir
 }
 
 project.afterEvaluate {
@@ -97,9 +90,6 @@ project.afterEvaluate {
         publications {
             release(MavenPublication) {
                 from components.release
-
-                // Adds javadocs
-                artifact androidJavadocsJar
 
                 groupId = 'com.hcaptcha'
                 artifactId = 'sdk'
@@ -115,15 +105,6 @@ project.afterEvaluate {
                             url = 'https://github.com/hCaptcha/hcaptcha-android-sdk/blob/main/LICENSE'
                         }
                     }
-                    developers {
-                        developer {
-                            id = 'sergiu'
-                            name = 'Sergiu Danalachi'
-                            email = 'sergiu@intuitionmachines.com'
-                            organization = 'hCaptcha'
-                            organizationUrl = 'https://www.hcaptcha.com'
-                        }
-                    }
                     scm {
                         connection = 'scm:git:git://github.com/hCaptcha/hcaptcha-android-sdk.git'
                         developerConnection = 'scm:git:ssh://github.com:hCaptcha/hcaptcha-android-sdk.git'
@@ -135,82 +116,6 @@ project.afterEvaluate {
     }
 }
 
-long MAX_AAR_SIZE_KB = 200
-
-android.libraryVariants.all { variant ->
-    def variantName = variant.name.capitalize()
-    project.task("report${variantName}AarSize") {
-        group 'Help'
-        description "Report ${variant.name} AAR size"
-        dependsOn variant.packageLibraryProvider
-
-        doFirst {
-            String aarPath = variant.packageLibraryProvider.get().archivePath
-            long aarSizeKb = file(aarPath).length() / 1024
-            println("File ${aarPath} is ${aarSizeKb}Kbyte")
-        }
-    }
-
-    project.tasks.findByName("check").dependsOn(project.task("check${variantName}AarSize") {
-        group 'Verification'
-        description "Checks ${variant.name} AAR size doesn't exceed ${MAX_AAR_SIZE_KB}Kb"
-        dependsOn variant.packageLibraryProvider
-
-        doFirst {
-            String aarPath = variant.packageLibraryProvider.get().archivePath
-            long aarSizeKb = file(aarPath).length() / 1024
-            if (aarSizeKb > MAX_AAR_SIZE_KB) {
-                throw new GradleException("${aarPath} size exceeded! ${aarSizeKb}Kbyte > ${MAX_AAR_SIZE_KB}Kbyte")
-            }
-        }
-    })
-}
-
-task checkstyle(type: Checkstyle) {
-    description 'Check code standard'
-    group 'verification'
-    configFile file("${rootDir}/gradle/config/checkstyle.xml")
-    source 'src'
-    include '**/*.java'
-    exclude '**/gen/**'
-    classpath = files()
-    ignoreFailures = false
-    maxWarnings = 0
-}
-
-task pmd(type: Pmd) {
-    ruleSetFiles = files("${project.rootDir}/gradle/config/pmd.xml")
-    ignoreFailures = false
-    ruleSets = []
-    source 'src'
-    include '**/*.java'
-    exclude '**/gen/**'
-    reports {
-        xml.enabled = false
-        html.enabled = true
-        html.destination = file("$project.buildDir/outputs/pmd/pmd.html")
-    }
-}
-
-spotbugs {
-    ignoreFailures = false
-    showStackTraces = true
-    showProgress = false
-    reportLevel = 'high'
-    excludeFilter = file("${project.rootDir}/gradle/config/findbugs-exclude.xml")
-    onlyAnalyze = ['com.hcaptcha.sdk.*']
-    projectName = name
-    release = version
-}
-
-// enable html report
-gradle.taskGraph.beforeTask { task ->
-    if (task.name.toLowerCase().contains('spotbugs')) {
-        task.reports {
-            html.enabled = true
-            xml.enabled = true
-        }
-    }
-}
-
-check.dependsOn('checkstyle', 'pmd')
+apply from: "$rootProject.projectDir/gradle/shared/code-quality.gradle"
+apply from: "$rootProject.projectDir/gradle/shared/size-check.gradle"
+apply from: "$rootProject.projectDir/gradle/shared/html-java-gen.gradle"

@@ -3,12 +3,12 @@ buildscript {
     repositories {
         google()
         mavenCentral()
-        maven { url 'https://jitpack.io' }
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:4.1.3'
-        // NOTE: Do not place your application dependencies here; they belong
-        // in the individual module build.gradle files
+        classpath 'com.android.tools.build:gradle:8.7.3'
+        classpath 'androidx.benchmark:benchmark-gradle-plugin:1.3.3'
+        classpath 'com.slack.keeper:keeper:0.16.0'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
     }
 }
 
@@ -16,5 +16,18 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        maven { url 'https://jitpack.io' }
+    }
+}
+
+gradle.afterProject {
+    def hookScript = new File(rootProject.rootDir, ".git/hooks/pre-commit")
+
+    if (!hookScript.exists()) {
+        hookScript.text = """\
+                          #!/bin/sh
+                          ./gradlew check
+                          """.stripIndent()
+        hookScript.setExecutable(true)
     }
 }

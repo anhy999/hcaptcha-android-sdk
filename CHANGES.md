@@ -1,5 +1,100 @@
 # Changelog
 
+# 4.1.0
+
+- Feat: preload WebView on `setup` call
+
+# 4.0.5
+
+- compose-sdk: set minSdk to 21
+
+# 4.0.4
+
+- Downgrade: jackson-databind to 2.13.* (#170)
+
+# 4.0.3
+
+- Upgrade: third-party dependencies (lombok, jackson-databind) (#167)
+
+# 4.0.2
+
+- Fix: passive site keys (hideDialog=true) broken for `compose-sdk`
+
+# 4.0.1
+
+- Feat: release of `compose-sdk`
+
+# 4.0.0
+
+- Feat (breaking change): accept `HCaptcha.getClient(Activity)` for passive sitekeys. (#112)
+
+# 3.11.0
+
+- Fix: handle null `internalConfig` in args for HCaptchaDialogFragment (#140)
+- Feature: drop diagnostic logs from production code (#139)
+- Fix: wrong language used in `values-be/strings.xml` (#138)
+- Fix: misleading exception on missing `siteKey` (#137)
+- Fix: calling `webView.loadUrl` on destroyed `WebView` (#136)
+
+# 3.10.0
+
+- Fix: crash on insecure HTTP request handling
+- Feat: new error code `INSECURE_HTTP_REQUEST_ERROR`
+
+# 3.9.1
+
+- Fix: add missing ProGuard rules for enums
+
+# 3.9.0
+
+- Feature: add config to control WebView hardware acceleration `HCaptchaConfig.disableHardwareAcceleration`
+- Fix: removed unsafe cast with improved public api
+
+# 3.8.2
+
+- Bugfix: handle BadParcelableException when hCaptcha fragment needs to be recreated due to app resume
+
+# 3.8.1
+
+- Bugfix: report error when missing WebView provider
+
+# 3.8.0
+
+- Feat: new `HCaptcha.reset` to force stop verification and release all resources.
+
+# 3.7.0
+
+- Feat: new `HCaptchaConfig.orientation` to set either `portrait` or `landscape` challenge orientation.
+
+# 3.6.0
+
+- Feat: new `HCaptcha.removeAllListener` and `HCaptcha.removeOn[Success|Failure|Open]Listener(listener)` to remove all or specific listener.
+
+# 3.5.2
+
+- Bugfix: java.lang.IllegalStateException: Can not perform this action after onSaveInstanceState, on `verifyWithHCaptcha`
+
+# 3.5.1
+
+- Bugfix: Parcelable encountered IOException writing serializable object (name = com.hcaptcha.sdk.HCaptchaConfig) ([#94](https://github.com/hCaptcha/hcaptcha-android-sdk/issues/94))
+
+# 3.5.0
+
+- Deprecated: `HCaptchaConfig.apiEndpoint` replaced with `HCaptchaConfig.jsSrc` option
+
+# 3.4.0
+
+- Feat: new `HCaptchaConfig.retryPredicate` which allows conditional automatic retry
+- Deprecated: `HCaptchaConfig.resetOnTimeout` replaced by more generic `HCaptchaConfig.retryPredicate` option
+
+# 3.3.7
+
+- Bugfix: handle Failed to load WebView provider: No WebView installed
+
+# 3.3.6
+
+- Bugfix: always dim background if checkbox is visible ([#72](https://github.com/hCaptcha/hcaptcha-android-sdk/issues/72))
+
 # 3.3.5
 
 - Show loading screen until the challenge is open when size is `HCaptchaSize.INVISIBLE`

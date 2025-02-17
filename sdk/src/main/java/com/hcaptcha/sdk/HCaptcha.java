@@ -1,9 +1,10 @@
 package com.hcaptcha.sdk;
 
-import android.content.Context;
+import android.app.Activity;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.util.AndroidRuntimeException;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.FragmentActivity;
 
@@ -12,10 +13,9 @@ import lombok.NonNull;
 
 public final class HCaptcha extends Task<HCaptchaTokenResponse> implements IHCaptcha {
     public static final String META_SITE_KEY = "com.hcaptcha.sdk.site-key";
-    public static final String TAG = "hCaptcha";
 
     @NonNull
-    private final FragmentActivity activity;
+    private final Activity activity;
 
     @Nullable
     private IHCaptchaVerifier captchaVerifier;
@@ -24,37 +24,43 @@ public final class HCaptcha extends Task<HCaptchaTokenResponse> implements IHCap
     private HCaptchaConfig config;
 
     @NonNull
-    private final IHCaptchaHtmlProvider htmlProvider = new HCaptchaHtml();
+    private final HCaptchaInternalConfig internalConfig;
 
-    private HCaptcha(@NonNull final Context context) {
-        this.activity = (FragmentActivity) context;
+    private HCaptcha(@NonNull final Activity activity, @NonNull final HCaptchaInternalConfig internalConfig) {
+        this.activity = activity;
+        this.internalConfig = internalConfig;
     }
 
     /**
      * Constructs a new client which allows to display a challenge dialog
      *
-     * @param context The current context
+     * @param activity FragmentActivity instance for a visual challenge verification,
+     *                or any Activity in case of passive siteKey
      * @return new {@link HCaptcha} object
      */
-    public static HCaptcha getClient(@NonNull final Context context) {
-        return new HCaptcha(context);
+    public static HCaptcha getClient(@NonNull final Activity activity) {
+        return new HCaptcha(activity, HCaptchaInternalConfig.builder().build());
+    }
+
+    static HCaptcha getClient(@NonNull final Activity activity,
+                              @NonNull HCaptchaInternalConfig internalConfig) {
+        return new HCaptcha(activity, internalConfig);
     }
 
     @Override
     public HCaptcha setup() {
         final String siteKey;
         try {
-            final String packageName = activity.getPackageName();
-            final ApplicationInfo app = activity.getPackageManager().getApplicationInfo(
-                    packageName, PackageManager.GET_META_DATA);
+            final ApplicationInfo app = HCaptchaCompat.getApplicationInfo(activity);
             final Bundle bundle = app.metaData;
             siteKey = bundle.getString(META_SITE_KEY);
         } catch (PackageManager.NameNotFoundException e) {
             throw new IllegalStateException(e);
         }
         if (siteKey == null) {
-            throw new IllegalStateException("Add missing " + META_SITE_KEY + " meta-data to AndroidManifest.xml"
-                    + " or call getClient(context, siteKey) method");
+            throw new IllegalStateException("The site-key is missing. You can pass it by adding "
+                    + META_SITE_KEY + " as meta-data to AndroidManifest.xml "
+                    + "or as an argument for setup/verifyWithHCaptcha methods.");
         }
         return setup(siteKey);
     }
@@ -88,16 +94,22 @@ public final class HCaptcha extends Task<HCaptchaTokenResponse> implements IHCap
                 setException(exception);
             }
         };
-        if (inputConfig.getHideDialog()) {
-            // Overwrite certain config values in case the dialog is hidden to avoid behavior collision
-            this.config = inputConfig.toBuilder()
-                    .size(HCaptchaSize.INVISIBLE)
-                    .loading(false)
-                    .build();
-            captchaVerifier = new HCaptchaHeadlessWebView(activity, this.config, listener, htmlProvider);
-        } else {
-            captchaVerifier = HCaptchaDialogFragment.newInstance(inputConfig, listener, htmlProvider);
-            this.config = inputConfig;
+        try {
+            if (Boolean.TRUE.equals(inputConfig.getHideDialog())) {
+                // Overwrite certain config values in case the dialog is hidden to avoid behavior collision
+                this.config = inputConfig.toBuilder()
+                        .size(HCaptchaSize.INVISIBLE)
+                        .loading(false)
+                        .build();
+                captchaVerifier = new HCaptchaHeadlessWebView(activity, this.config, internalConfig, listener);
+            } else if (this.activity instanceof FragmentActivity) {
+                captchaVerifier = HCaptchaDialogFragment.newInstance(activity, inputConfig, internalConfig, listener);
+                this.config = inputConfig;
+            } else {
+                throw new IllegalStateException("Visual hCaptcha challenge verification requires FragmentActivity.");
+            }
+        } catch (AndroidRuntimeException e) {
+            listener.onFailure(new HCaptchaException(HCaptchaError.ERROR));
         }
         return this;
     }
@@ -134,11 +146,22 @@ public final class HCaptcha extends Task<HCaptchaTokenResponse> implements IHCap
         return startVerification();
     }
 
+    @Override
+    public void reset() {
+        if (captchaVerifier != null) {
+            captchaVerifier.reset();
+            captchaVerifier = null;
+        }
+    }
+
     private HCaptcha startVerification() {
         HCaptchaLog.d("HCaptcha.startVerification");
         handler.removeCallbacksAndMessages(null);
-        assert captchaVerifier != null;
-        captchaVerifier.startVerification(activity);
+        if (captchaVerifier == null) {
+            setException(new HCaptchaException(HCaptchaError.ERROR));
+        } else {
+            captchaVerifier.startVerification(activity);
+        }
         return this;
     }
 }
